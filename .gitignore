@@ -1,0 +1,3 @@
+cleanmac
+dist/
+*.test
