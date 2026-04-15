@@ -15,16 +15,36 @@ import (
 
 var (
 	scanJSON     bool
+	scanFiles    bool
 	scanCategory string
 )
 
 var scanCmd = &cobra.Command{
 	Use:   "scan",
 	Short: "Scan and report disk usage by category",
+	Long: `Scan all categories and show a summary table.
+
+Use --files to see every individual file/folder that would be deleted.
+Use --type to scope to a single category (caches, logs, dev, browser, large, trash, ios, mail).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, "Scanning... (this may take a moment)")
 
 		result := scanner.ScanAll(cfg)
+
+		// Filter by category if requested.
+		if scanCategory != "" {
+			var filtered []scanner.CategoryResult
+			for _, c := range result.Categories {
+				if string(c.ID) == scanCategory {
+					filtered = append(filtered, c)
+				}
+			}
+			result.Categories = filtered
+			result.TotalSize = 0
+			for _, c := range filtered {
+				result.TotalSize += c.TotalSize
+			}
+		}
 
 		// Sort by size descending.
 		sort.Slice(result.Categories, func(i, j int) bool {
@@ -32,17 +52,24 @@ var scanCmd = &cobra.Command{
 		})
 
 		if scanJSON {
-			return printJSON(result)
+			return printJSON(result, scanFiles)
 		}
 
 		printTable(result)
+
+		if scanFiles {
+			fmt.Println()
+			printFileDetail(result)
+		}
+
 		return nil
 	},
 }
 
 func init() {
 	scanCmd.Flags().BoolVar(&scanJSON, "json", false, "output as JSON")
-	scanCmd.Flags().StringVar(&scanCategory, "type", "", "only scan specific category")
+	scanCmd.Flags().BoolVarP(&scanFiles, "files", "f", false, "show individual files/folders per category")
+	scanCmd.Flags().StringVar(&scanCategory, "type", "", "only scan one category: caches|logs|dev|browser|large|trash|ios|mail")
 }
 
 func printTable(result *scanner.ScanResult) {
@@ -55,9 +82,11 @@ func printTable(result *scanner.ScanResult) {
 	colName := 26
 	colSize := 12
 
-	// Build rows as plain strings first, then style per-cell (avoids ANSI width issues).
 	header := fmt.Sprintf("  %-*s  %*s  %s", colName, "Category", colSize, "Size", "Risk")
-	sep := fmt.Sprintf("  %-*s  %*s  %s", colName, strings.Repeat("─", colName), colSize, strings.Repeat("─", colSize), strings.Repeat("─", 8))
+	sep := fmt.Sprintf("  %-*s  %*s  %s",
+		colName, strings.Repeat("─", colName),
+		colSize, strings.Repeat("─", colSize),
+		strings.Repeat("─", 8))
 
 	rows := []string{
 		headerStyle.Render(header),
@@ -75,7 +104,6 @@ func printTable(result *scanner.ScanResult) {
 			riskStr = safeStyle.Render("✓ safe   ")
 		}
 		sizeStr := sizeStyle.Render(fmt.Sprintf("%*s", colSize, humanize.Bytes(cat.TotalSize)))
-		// Plain name padded, then styled size and risk appended.
 		row := fmt.Sprintf("  %-*s  %s  %s", colName, cat.DisplayName, sizeStr, riskStr)
 		rows = append(rows, row)
 	}
@@ -92,12 +120,66 @@ func printTable(result *scanner.ScanResult) {
 	fmt.Println(strings.Join(rows, "\n"))
 }
 
-type jsonCategory struct {
-	ID    string `json:"id"`
+func printFileDetail(result *scanner.ScanResult) {
+	sizeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
+	catStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
+	zeroStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+
+	for _, cat := range result.Categories {
+		// Category header.
+		riskTag := ""
+		if cat.Risk == scanner.RiskWarning {
+			riskTag = "  " + warnStyle.Render("⚠ review carefully")
+		}
+		fmt.Printf("\n%s%s\n", catStyle.Render("  "+cat.DisplayName), riskTag)
+		fmt.Println(dimStyle.Render("  " + strings.Repeat("─", 60)))
+
+		if len(cat.Files) == 0 {
+			fmt.Println(zeroStyle.Render("    (nothing found)"))
+			continue
+		}
+
+		// Sort files by size descending.
+		files := make([]scanner.FileEntry, len(cat.Files))
+		copy(files, cat.Files)
+		sort.Slice(files, func(i, j int) bool {
+			return files[i].Size > files[j].Size
+		})
+
+		colPath := 52
+		for _, f := range files {
+			name := f.Name
+			if len([]rune(name)) > colPath {
+				runes := []rune(name)
+				name = "…" + string(runes[len(runes)-colPath+1:])
+			}
+			sizeStr := sizeStyle.Render(fmt.Sprintf("%10s", humanize.Bytes(f.Size)))
+			fmt.Printf("    %s  %s\n", sizeStr, name)
+		}
+
+		fmt.Printf(dimStyle.Render("    Total: %s (%d items)\n"),
+			humanize.Bytes(cat.TotalSize), len(cat.Files))
+	}
+}
+
+// JSON types.
+
+type jsonFile struct {
+	Path  string `json:"path"`
 	Name  string `json:"name"`
 	Size  int64  `json:"size_bytes"`
 	Human string `json:"size_human"`
-	Risk  string `json:"risk"`
+}
+
+type jsonCategory struct {
+	ID    string     `json:"id"`
+	Name  string     `json:"name"`
+	Size  int64      `json:"size_bytes"`
+	Human string     `json:"size_human"`
+	Risk  string     `json:"risk"`
+	Files []jsonFile `json:"files,omitempty"`
 }
 
 type jsonResult struct {
@@ -106,7 +188,7 @@ type jsonResult struct {
 	TotalHuman string         `json:"total_human"`
 }
 
-func printJSON(result *scanner.ScanResult) error {
+func printJSON(result *scanner.ScanResult, includeFiles bool) error {
 	cats := make([]jsonCategory, 0, len(result.Categories))
 	for _, c := range result.Categories {
 		risk := "safe"
@@ -115,13 +197,27 @@ func printJSON(result *scanner.ScanResult) error {
 		} else if c.Risk == scanner.RiskDanger {
 			risk = "danger"
 		}
-		cats = append(cats, jsonCategory{
+
+		jc := jsonCategory{
 			ID:    string(c.ID),
 			Name:  c.DisplayName,
 			Size:  c.TotalSize,
 			Human: humanize.Bytes(c.TotalSize),
 			Risk:  risk,
-		})
+		}
+
+		if includeFiles {
+			for _, f := range c.Files {
+				jc.Files = append(jc.Files, jsonFile{
+					Path:  f.Path,
+					Name:  f.Name,
+					Size:  f.Size,
+					Human: humanize.Bytes(f.Size),
+				})
+			}
+		}
+
+		cats = append(cats, jc)
 	}
 
 	out := jsonResult{

@@ -43,9 +43,10 @@ type Model struct {
 	scanCh     <-chan scanner.CategoryResult
 	categories []scanner.CategoryResult
 
-	cursor   int
-	selected map[int]bool
-	expanded int
+	cursor     int
+	selected   map[int]bool
+	expanded   int
+	fileScroll int // scroll offset for expanded file list
 
 	progress   progress.Model
 	cleanTotal int64
@@ -167,9 +168,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if m.expanded == m.cursor {
 				m.expanded = -1
+				m.fileScroll = 0
 				m.state = StateSelect
 			} else {
 				m.expanded = m.cursor
+				m.fileScroll = 0
 				m.state = StateExpanded
 			}
 		case "d":
@@ -179,20 +182,41 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case StateExpanded:
+		files := []scanner.FileEntry{}
+		if m.expanded >= 0 && m.expanded < len(m.categories) {
+			files = m.categories[m.expanded].Files
+		}
+		visibleLines := m.visibleFileLines()
+
 		switch msg.String() {
 		case "esc", "q":
 			m.state = StateSelect
 			m.expanded = -1
+			m.fileScroll = 0
 		case "j", "down":
-			if m.cursor < len(m.categories)-1 {
-				m.cursor++
-				m.expanded = m.cursor
+			// Scroll file list down.
+			if m.fileScroll < len(files)-visibleLines {
+				m.fileScroll++
 			}
 		case "k", "up":
-			if m.cursor > 0 {
-				m.cursor--
-				m.expanded = m.cursor
+			// Scroll file list up.
+			if m.fileScroll > 0 {
+				m.fileScroll--
 			}
+		case "pgdown", " ":
+			m.fileScroll += visibleLines
+			if m.fileScroll > len(files)-visibleLines {
+				m.fileScroll = max(0, len(files)-visibleLines)
+			}
+		case "pgup":
+			m.fileScroll -= visibleLines
+			if m.fileScroll < 0 {
+				m.fileScroll = 0
+			}
+		case "G":
+			m.fileScroll = max(0, len(files)-visibleLines)
+		case "g":
+			m.fileScroll = 0
 		}
 
 	case StateConfirm:
@@ -315,17 +339,29 @@ func (m Model) viewSelect() string {
 			sb.WriteString(row + "\n")
 		}
 
-		// Expanded file list.
+		// Expanded file list (scrollable).
 		if m.state == StateExpanded && m.expanded == i {
-			for j, f := range cat.Files {
-				if j >= 12 {
-					sb.WriteString(DimStyle.Render(fmt.Sprintf(
-						"       ... and %d more\n", len(cat.Files)-12)))
-					break
-				}
-				sb.WriteString(DimStyle.Render(fmt.Sprintf(
-					"       %-32s %s\n", truncate(f.Name, 32), humanize.Bytes(f.Size))))
+			files := cat.Files
+			visible := m.visibleFileLines()
+			start := m.fileScroll
+			if start > len(files) {
+				start = 0
 			}
+			end := start + visible
+			if end > len(files) {
+				end = len(files)
+			}
+
+			for _, f := range files[start:end] {
+				sizeStr := SizeStyle.Render(fmt.Sprintf("%10s", humanize.Bytes(f.Size)))
+				sb.WriteString(fmt.Sprintf("       %s  %s\n",
+					sizeStr, DimStyle.Render(truncate(f.Name, 45))))
+			}
+
+			// Scroll indicator.
+			scrollInfo := fmt.Sprintf("       showing %d–%d of %d  (j/k scroll, g/G top/bottom, esc back)",
+				start+1, end, len(files))
+			sb.WriteString(DimStyle.Render(scrollInfo) + "\n")
 		}
 	}
 
@@ -386,11 +422,29 @@ func (m Model) viewSummary() string {
 	return BorderStyle.Render(strings.Join(lines, "\n"))
 }
 
-func truncate(s string, max int) string {
+func truncate(s string, maxLen int) string {
 	runes := []rune(s)
-	if len(runes) <= max {
+	if len(runes) <= maxLen {
 		return s
 	}
-	return string(runes[:max-1]) + "…"
+	return string(runes[:maxLen-1]) + "…"
+}
+
+// visibleFileLines returns how many file entries fit in the expanded panel.
+func (m Model) visibleFileLines() int {
+	// Total height minus: border(2) + title(2) + category rows + statusbar(1) + scroll indicator(1) + padding(2)
+	overhead := len(m.categories) + 8
+	n := m.height - overhead
+	if n < 5 {
+		return 5
+	}
+	return n
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
