@@ -8,11 +8,19 @@ import (
 	"github.com/linder3hs/cleanmac/internal/scanner"
 )
 
+// CategoryFreed holds the result for a single cleaned category.
+type CategoryFreed struct {
+	Name  string
+	Freed int64
+	Count int
+}
+
 // Result holds the outcome of a clean operation.
 type Result struct {
-	Freed  int64
-	Count  int
-	Errors []error
+	Freed      int64
+	Count      int
+	Errors     []error
+	Categories []CategoryFreed
 }
 
 // Clean deletes the given file entries, respecting dry-run and protected paths.

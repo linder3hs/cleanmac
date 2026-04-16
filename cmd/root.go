@@ -53,8 +53,10 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&dryRun, "dry-run", "n", false, "show what would be deleted, never delete")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable color output")
 
+	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(scanCmd)
 	rootCmd.AddCommand(cleanCmd)
+	rootCmd.AddCommand(diskCmd)
 	rootCmd.AddCommand(versionCmd)
 }
 

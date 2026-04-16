@@ -1,0 +1,85 @@
+# GoReleaser config — https://goreleaser.com
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: cleanmac
+    binary: cleanmac
+    main: .
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .Commit }} -X main.date={{ .Date }}
+
+archives:
+  - id: default
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Other
+      order: 999
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+
+brews:
+  - name: cleanmac
+    repository:
+      owner: linder3hs
+      name: homebrew-cleanmac
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/linder3hs/cleanmac"
+    description: "Fast interactive terminal disk cleaner for macOS"
+    license: "MIT"
+    test: |
+      system "#{bin}/cleanmac", "version"
+    install: |
+      bin.install "cleanmac"
+
+release:
+  github:
+    owner: linder3hs
+    name: cleanmac
+  draft: false
+  prerelease: auto
+  header: |
+    ## CleanMac {{ .Version }}
+
+    See [CHANGELOG.md](https://github.com/linder3hs/cleanmac/blob/main/CHANGELOG.md) for details.
+  footer: |
+    **Install via Homebrew:**
+    ```bash
+    brew install linder3hs/cleanmac/cleanmac
+    ```

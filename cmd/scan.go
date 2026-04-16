@@ -78,15 +78,28 @@ func printTable(result *scanner.ScanResult) {
 	warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+	pctStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
+	pctHighStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
 
 	colName := 26
-	colSize := 12
+	colSize := 10
+	colPct := 5
+	colFiles := 7
 
-	header := fmt.Sprintf("  %-*s  %*s  %s", colName, "Category", colSize, "Size", "Risk")
-	sep := fmt.Sprintf("  %-*s  %*s  %s",
-		colName, strings.Repeat("─", colName),
-		colSize, strings.Repeat("─", colSize),
-		strings.Repeat("─", 8))
+	header := fmt.Sprintf("  %-*s  %*s  %*s  %*s  %s",
+		colName, "Category",
+		colSize, "Size",
+		colPct, "%",
+		colFiles, "Files",
+		"Risk",
+	)
+	sep := fmt.Sprintf("  %s  %s  %s  %s  %s",
+		strings.Repeat("─", colName),
+		strings.Repeat("─", colSize),
+		strings.Repeat("─", colPct),
+		strings.Repeat("─", colFiles),
+		strings.Repeat("─", 8),
+	)
 
 	rows := []string{
 		headerStyle.Render(header),
@@ -103,8 +116,29 @@ func printTable(result *scanner.ScanResult) {
 		default:
 			riskStr = safeStyle.Render("✓ safe   ")
 		}
+
+		var pct float64
+		if result.TotalSize > 0 {
+			pct = float64(cat.TotalSize) / float64(result.TotalSize) * 100
+		}
+		pctStr := fmt.Sprintf("%*.0f%%", colPct-1, pct)
+		var styledPct string
+		if pct >= 50 {
+			styledPct = pctHighStyle.Render(pctStr)
+		} else {
+			styledPct = pctStyle.Render(pctStr)
+		}
+
+		fileCount := fmt.Sprintf("%*d", colFiles, len(cat.Files))
+
 		sizeStr := sizeStyle.Render(fmt.Sprintf("%*s", colSize, humanize.Bytes(cat.TotalSize)))
-		row := fmt.Sprintf("  %-*s  %s  %s", colName, cat.DisplayName, sizeStr, riskStr)
+		row := fmt.Sprintf("  %-*s  %s  %s  %s  %s",
+			colName, cat.DisplayName,
+			sizeStr,
+			styledPct,
+			dimStyle.Render(fileCount),
+			riskStr,
+		)
 		rows = append(rows, row)
 	}
 

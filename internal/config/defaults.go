@@ -19,7 +19,11 @@ func systemProtectedPaths() []string {
 		"/private/var",
 		"/Applications",
 		"/Library",
-		home,
+		// NOTE: do NOT protect $HOME itself — that would block ~/Library/Caches/*
+		// which is the cleaner's primary target. Sensitive subdirs listed below.
+		filepath.Join(home, "Library", "Keychains"),
+		filepath.Join(home, "Library", "Mail"),
+		filepath.Join(home, "Library", "Messages"),
 		filepath.Join(home, ".ssh"),
 		filepath.Join(home, ".gnupg"),
 		filepath.Join(home, ".config"),

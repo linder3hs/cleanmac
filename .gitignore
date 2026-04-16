@@ -1,3 +1,18 @@
+# Built binary
 cleanmac
 dist/
+
+# Test artifacts
 *.test
+*.out
+coverage.txt
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local Claude Code state
+.claude/
