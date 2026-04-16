@@ -1,26 +1,30 @@
+version: "2"
+
 run:
   timeout: 5m
   go: '1.25'
 
 linters:
+  default: none
   enable:
     - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
-    - gofmt
-    - goimports
     - misspell
     - unconvert
     - unparam
 
-linters-settings:
-  goimports:
-    local-prefixes: github.com/linder3hs/cleanmac
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/linder3hs/cleanmac
 
 issues:
-  exclude-dirs:
-    - dist
   max-issues-per-linter: 0
   max-same-issues: 0
