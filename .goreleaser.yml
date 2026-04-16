@@ -73,6 +73,8 @@ release:
     name: cleanmac
   draft: false
   prerelease: auto
+  replace_existing_artifacts: true
+  mode: replace
   header: |
     ## CleanMac {{ .Version }}
 
